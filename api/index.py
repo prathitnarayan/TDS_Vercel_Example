@@ -1,10 +1,18 @@
-from fastapi import FastAPI, Response
+from fastapi import FastAPI, Request
 from pydantic import BaseModel
 import json
 import numpy as np
 from pathlib import Path
 
 app = FastAPI()
+
+@app.middleware("http")
+async def add_cors_header(request: Request, call_next):
+    response = await call_next(request)
+    response.headers["Access-Control-Allow-Origin"] = "*"
+    response.headers["Access-Control-Allow-Methods"] = "POST, GET, OPTIONS"
+    response.headers["Access-Control-Allow-Headers"] = "*"
+    return response
 
 class LatencyRequest(BaseModel):
     regions: list[str]
@@ -21,26 +29,16 @@ def load_telemetry_data():
     with open(data_path, 'r') as f:
         return json.load(f)
 
-def add_cors_headers(response: Response):
-    response.headers["Access-Control-Allow-Origin"] = "*"
-    response.headers["Access-Control-Allow-Methods"] = "POST, OPTIONS"
-    response.headers["Access-Control-Allow-Headers"] = "*"
-    return response
-
 @app.get("/")
-async def root(response: Response):
-    add_cors_headers(response)
+async def root():
     return {"status": "ok", "endpoint": "/api/latency"}
 
 @app.options("/api/latency")
-async def options_latency(response: Response):
-    add_cors_headers(response)
+async def options_latency():
     return {}
 
 @app.post("/api/latency")
-async def check_latency(request: LatencyRequest, response: Response) -> dict[str, RegionMetrics]:
-    add_cors_headers(response)
-    
+async def check_latency(request: LatencyRequest) -> dict[str, RegionMetrics]:
     telemetry_data = load_telemetry_data()
     results = {}
     
