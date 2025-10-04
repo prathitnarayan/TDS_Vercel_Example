@@ -29,6 +29,10 @@ def load_telemetry_data():
     with open(data_path, 'r') as f:
         return json.load(f)
 
+@app.get("/")
+async def root():
+    return {"status": "ok", "endpoint": "/api/latency"}
+
 @app.post("/api/latency")
 async def check_latency(request: LatencyRequest) -> dict[str, RegionMetrics]:
     telemetry_data = load_telemetry_data()
