@@ -9,13 +9,15 @@ app = FastAPI()
 # Enable CORS for all origins
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],        # allow all origins
-    allow_methods=["POST"],     # allow POST requests
-    allow_headers=["*"],        # allow all headers
+    allow_origins=["*"],
+    allow_methods=["POST"],
+    allow_headers=["*"],
 )
 
-# Load sample telemetry (replace with actual path)
-df = pd.read_csv("telemetry.csv")  # assuming 'region', 'latency_ms', 'uptime' columns
+# Load telemetry data
+df = pd.read_json("q-vercel-latency.json")
+# Convert uptime_pct to decimal (0-1 range)
+df["uptime"] = df["uptime_pct"] / 100
 
 @app.post("/api/latency")
 async def latency_metrics(request: Request):
@@ -30,10 +32,11 @@ async def latency_metrics(request: Request):
         p95_latency = np.percentile(data["latency_ms"], 95)
         avg_uptime = data["uptime"].mean()
         breaches = (data["latency_ms"] > threshold_ms).sum()
+        
         response[region] = {
             "avg_latency": round(float(avg_latency), 2),
             "p95_latency": round(float(p95_latency), 2),
-            "avg_uptime": round(float(avg_uptime), 2),
+            "avg_uptime": round(float(avg_uptime), 4),
             "breaches": int(breaches)
         }
     
