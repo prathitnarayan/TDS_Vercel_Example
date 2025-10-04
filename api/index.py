@@ -7,6 +7,7 @@ from pathlib import Path
 
 app = FastAPI()
 
+# CORS must be added before routes
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -33,6 +34,10 @@ def load_telemetry_data():
 @app.get("/")
 async def root():
     return {"status": "ok", "endpoint": "/api/latency"}
+
+@app.options("/api/latency")
+async def options_latency():
+    return {}
 
 @app.post("/api/latency")
 async def check_latency(request: LatencyRequest) -> dict[str, RegionMetrics]:
