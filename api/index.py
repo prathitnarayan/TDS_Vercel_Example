@@ -1,43 +1,64 @@
-from fastapi import FastAPI, Request
+from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
+from pydantic import BaseModel
+import json
 import numpy as np
-import pandas as pd
+from pathlib import Path
 
 app = FastAPI()
 
-# Enable CORS for all origins
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
-    allow_methods=["POST"],
+    allow_credentials=False,
+    allow_methods=["*"],
     allow_headers=["*"],
 )
 
-# Load telemetry data
-df = pd.read_json("q-vercel-latency.json")
-# Convert uptime_pct to decimal (0-1 range)
-df["uptime"] = df["uptime_pct"] / 100
+class LatencyRequest(BaseModel):
+    regions: list[str]
+    threshold_ms: float
+
+class RegionMetrics(BaseModel):
+    avg_latency: float
+    p95_latency: float
+    avg_uptime: float
+    breaches: int
+
+def load_telemetry_data():
+    data_path = Path(__file__).parent.parent / "q-vercel-latency.json"
+    with open(data_path, 'r') as f:
+        return json.load(f)
+
+@app.get("/")
+async def root():
+    return {"status": "ok", "endpoint": "/api/latency"}
 
 @app.post("/api/latency")
-async def latency_metrics(request: Request):
-    body = await request.json()
-    regions = body.get("regions", [])
-    threshold_ms = body.get("threshold_ms", 180)
+async def check_latency(request: LatencyRequest) -> dict[str, RegionMetrics]:
+    telemetry_data = load_telemetry_data()
+    results = {}
     
-    response = {}
-    for region in regions:
-        data = df[df["region"] == region]
-        avg_latency = data["latency_ms"].mean()
-        p95_latency = np.percentile(data["latency_ms"], 95)
-        avg_uptime = data["uptime"].mean()
-        breaches = (data["latency_ms"] > threshold_ms).sum()
+    for region in request.regions:
+        region_data = [r for r in telemetry_data if r["region"] == region]
         
-        response[region] = {
-            "avg_latency": round(float(avg_latency), 2),
-            "p95_latency": round(float(p95_latency), 2),
-            "avg_uptime": round(float(avg_uptime), 4),
-            "breaches": int(breaches)
-        }
+        if not region_data:
+            results[region] = RegionMetrics(
+                avg_latency=0.0,
+                p95_latency=0.0,
+                avg_uptime=0.0,
+                breaches=0
+            )
+            continue
+        
+        latencies = [r["latency_ms"] for r in region_data]
+        uptimes = [r["uptime_pct"] / 100 for r in region_data]
+        
+        results[region] = RegionMetrics(
+            avg_latency=round(float(np.mean(latencies)), 2),
+            p95_latency=round(float(np.percentile(latencies, 95)), 2),
+            avg_uptime=round(float(np.mean(uptimes)), 4),
+            breaches=sum(1 for lat in latencies if lat > request.threshold_ms)
+        )
     
-    return JSONResponse(content=response)
+    return results
